@@ -1,0 +1,75 @@
+name: Build Cheat DLL (x64 Release)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:   # Permet de lancer manuellement depuis l'interface GitHub
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive   # Si tu utilises git submodules pour ImGui/MinHook
+
+    # ────────────────────────────────────────────────
+    # Option 1 : Clone ImGui et MinHook automatiquement
+    # (recommandé si tu ne veux pas les copier dans ton repo)
+    # ────────────────────────────────────────────────
+    - name: Clone Dear ImGui (latest docking branch)
+      if: steps.checkout.outputs.submodules != 'true'   # Si pas déjà submodule
+      run: |
+        git clone --depth 1 --branch docking https://github.com/ocornut/imgui.git external/imgui
+
+    - name: Clone MinHook
+      if: steps.checkout.outputs.submodules != 'true'
+      run: |
+        git clone --depth 1 https://github.com/TsudaKageyu/minhook.git external/minhook
+
+    # ────────────────────────────────────────────────
+    # Setup MSVC Developer Command Prompt (cl.exe, link.exe, etc.)
+    # ────────────────────────────────────────────────
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+        toolset: 14.40   # ≈ VS 2022, ajuste si besoin (14.3x pour 2022)
+
+    # ────────────────────────────────────────────────
+    # Build la DLL avec cl.exe
+    # ────────────────────────────────────────────────
+    - name: Build cheat.dll (Release x64)
+      shell: cmd
+      run: |
+        cl /EHsc /MD /O2 /LD /std:c++17 /Zc:__cplusplus /bigobj ^
+          dllmain.cpp ^
+          imgui\imgui.cpp imgui\imgui_draw.cpp imgui\imgui_widgets.cpp imgui\imgui_tables.cpp ^
+          imgui\imgui_impl_dx9.cpp imgui\imgui_impl_win32.cpp ^
+          minhook\src\buffer.c minhook\src\hook.c minhook\src\trampoline.c minhook\src\hde\hde64.c ^
+          /I imgui /I minhook\include ^
+          /link ^
+          /LIBPATH:"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.40.33807\lib\x64" ^
+          /LIBPATH:"C:\Program Files (x86)\Windows Kits\10\Lib\10.0.22621.0\um\x64" ^
+          /LIBPATH:"C:\Program Files (x86)\Windows Kits\10\Lib\10.0.22621.0\ucrt\x64" ^
+          d3d9.lib d3dx9.lib user32.lib gdi32.lib ^
+          /OUT:cheat.dll
+
+        if errorlevel 1 exit /b 1
+
+        dir cheat.dll
+
+    # ────────────────────────────────────────────────
+    # Upload la DLL comme artifact (téléchargeable depuis GitHub)
+    # ────────────────────────────────────────────────
+    - name: Upload cheat.dll artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cheat-dll
+        path: cheat.dll
+        if-no-files-found: error
+        retention-days: 7
