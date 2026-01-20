@@ -1,75 +1,67 @@
-name: Build Cheat DLL (x64 Release)
+name: Build Cheat DLL - Full Auto (x64 Release)
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:   # Permet de lancer manuellement depuis l'interface GitHub
+  workflow_dispatch:  # Bouton "Run workflow" manuel
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
+    # 1. Checkout ton code (dllmain.cpp)
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        submodules: recursive   # Si tu utilises git submodules pour ImGui/MinHook
 
-    # ────────────────────────────────────────────────
-    # Option 1 : Clone ImGui et MinHook automatiquement
-    # (recommandé si tu ne veux pas les copier dans ton repo)
-    # ────────────────────────────────────────────────
-    - name: Clone Dear ImGui (latest docking branch)
-      if: steps.checkout.outputs.submodules != 'true'   # Si pas déjà submodule
-      run: |
-        git clone --depth 1 --branch docking https://github.com/ocornut/imgui.git external/imgui
-
-    - name: Clone MinHook
-      if: steps.checkout.outputs.submodules != 'true'
-      run: |
-        git clone --depth 1 https://github.com/TsudaKageyu/minhook.git external/minhook
-
-    # ────────────────────────────────────────────────
-    # Setup MSVC Developer Command Prompt (cl.exe, link.exe, etc.)
-    # ────────────────────────────────────────────────
-    - name: Setup MSVC
+    # 2. Setup MSVC (cl.exe, link.exe, etc.) - VS 2022 style
+    - name: Setup MSVC Developer Command Prompt
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x64
-        toolset: 14.40   # ≈ VS 2022, ajuste si besoin (14.3x pour 2022)
+        toolset: 14.40  # VS 2022 compatible
 
-    # ────────────────────────────────────────────────
-    # Build la DLL avec cl.exe
-    # ────────────────────────────────────────────────
-    - name: Build cheat.dll (Release x64)
+    # 3. Setup JDK 8 (Temurin/Eclipse Adoptium, fiable et gratuit)
+    - name: Setup JDK 8 (pour jni.h + jvm.lib)
+      uses: actions/setup-java@v4
+      with:
+        java-version: '8'
+        distribution: 'temurin'
+        architecture: x64
+
+    # 4. Clone ImGui (docking branch, la plus récente/stable)
+    - name: Clone Dear ImGui
+      run: git clone --depth 1 --branch docking https://github.com/ocornut/imgui.git external/imgui
+
+    # 5. Clone MinHook
+    - name: Clone MinHook
+      run: git clone --depth 1 https://github.com/TsudaKageyu/minhook.git external/minhook
+
+    # 6. Build la DLL (cl.exe) - chemins adaptés au workflow
+    - name: Compile cheat.dll (Release x64)
       shell: cmd
       run: |
         cl /EHsc /MD /O2 /LD /std:c++17 /Zc:__cplusplus /bigobj ^
           dllmain.cpp ^
-          imgui\imgui.cpp imgui\imgui_draw.cpp imgui\imgui_widgets.cpp imgui\imgui_tables.cpp ^
-          imgui\imgui_impl_dx9.cpp imgui\imgui_impl_win32.cpp ^
-          minhook\src\buffer.c minhook\src\hook.c minhook\src\trampoline.c minhook\src\hde\hde64.c ^
-          /I imgui /I minhook\include ^
+          external\imgui\imgui.cpp external\imgui\imgui_draw.cpp external\imgui\imgui_widgets.cpp external\imgui\imgui_tables.cpp ^
+          external\imgui\backends\imgui_impl_dx9.cpp external\imgui\backends\imgui_impl_win32.cpp ^
+          external\minhook\src\buffer.c external\minhook\src\hook.c external\minhook\src\trampoline.c external\minhook\src\hde\hde64.c ^
+          /I external\imgui /I external\imgui\backends /I external\minhook\include /I "%JAVA_HOME%\include" /I "%JAVA_HOME%\include\win32" ^
           /link ^
-          /LIBPATH:"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.40.33807\lib\x64" ^
-          /LIBPATH:"C:\Program Files (x86)\Windows Kits\10\Lib\10.0.22621.0\um\x64" ^
-          /LIBPATH:"C:\Program Files (x86)\Windows Kits\10\Lib\10.0.22621.0\ucrt\x64" ^
-          d3d9.lib d3dx9.lib user32.lib gdi32.lib ^
+          /LIBPATH:"%JAVA_HOME%\lib" jvm.lib ^
+          d3d9.lib d3dx9.lib user32.lib gdi32.lib kernel32.lib ^
           /OUT:cheat.dll
 
         if errorlevel 1 exit /b 1
-
         dir cheat.dll
 
-    # ────────────────────────────────────────────────
-    # Upload la DLL comme artifact (téléchargeable depuis GitHub)
-    # ────────────────────────────────────────────────
-    - name: Upload cheat.dll artifact
+    # 7. Upload la DLL comme artifact (téléchargeable depuis GitHub)
+    - name: Upload cheat.dll Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: cheat-dll
+        name: cheat-dll-x64
         path: cheat.dll
         if-no-files-found: error
-        retention-days: 7
+        retention-days: 14
